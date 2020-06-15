@@ -11,7 +11,7 @@ import (
 //
 // Send sends an email to the given addresses.
 type Sender interface {
-	Send(from string, to []string, msg io.WriterTo) error
+	Send(from string, to []string, dkimConfig *DKIMConfig, msg io.WriterTo) error
 }
 
 // SendCloser is the interface that groups the Send and Close methods.
@@ -25,17 +25,17 @@ type SendCloser interface {
 // The SendFunc type is an adapter to allow the use of ordinary functions as
 // email senders. If f is a function with the appropriate signature, SendFunc(f)
 // is a Sender object that calls f.
-type SendFunc func(from string, to []string, msg io.WriterTo) error
+type SendFunc func(from string, to []string, dkc *DKIMConfig, msg io.WriterTo) error
 
 // Send calls f(from, to, msg).
-func (f SendFunc) Send(from string, to []string, msg io.WriterTo) error {
-	return f(from, to, msg)
+func (f SendFunc) Send(from string, to []string, dkc *DKIMConfig, msg io.WriterTo) error {
+	return f(from, to, dkc, msg)
 }
 
 // Send sends emails using the given Sender.
-func Send(s Sender, msg ...*Message) error {
+func Send(s Sender, dkimConfig *DKIMConfig, msg ...*Message) error {
 	for i, m := range msg {
-		if err := send(s, m); err != nil {
+		if err := send(s, dkimConfig, m); err != nil {
 			return fmt.Errorf("gomail: could not send email %d: %v", i+1, err)
 		}
 	}
@@ -43,7 +43,7 @@ func Send(s Sender, msg ...*Message) error {
 	return nil
 }
 
-func send(s Sender, m *Message) error {
+func send(s Sender, dkimConfig *DKIMConfig, m *Message) error {
 	from, err := m.getFrom()
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func send(s Sender, m *Message) error {
 		return err
 	}
 
-	if err := s.Send(from, to, m); err != nil {
+	if err := s.Send(from, to, dkimConfig, m); err != nil {
 		return err
 	}
 

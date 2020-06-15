@@ -593,14 +593,35 @@ func TestEmptyHeader(t *testing.T) {
 }
 
 func testMessage(t *testing.T, m *Message, bCount int, want *message) {
-	err := Send(stubSendMail(t, bCount, want), m)
+
+	dkc := DKIMConfig{
+		Selector: "1592040826",
+		Domain:   "example.com",
+		PubKey:   "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDDbDWNDSezM0CLzzEvpM9dzw89DTDO+SMy4q6aZ63jTg3azolMZfhUcesDAd/4sRyPl+TnJ4Y60ULa67Z3wK61NyBOoCVzWCG9FvAO16RxAC11E6JAoj+DsusGjEGwYHq3fLPCgHhlprcOVLIgi3at5Zo9flh2K9+EuAgyWKanHQIDAQAB",
+		PrivKey: `-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQDDbDWNDSezM0CLzzEvpM9dzw89DTDO+SMy4q6aZ63jTg3azolM
+ZfhUcesDAd/4sRyPl+TnJ4Y60ULa67Z3wK61NyBOoCVzWCG9FvAO16RxAC11E6JA
+oj+DsusGjEGwYHq3fLPCgHhlprcOVLIgi3at5Zo9flh2K9+EuAgyWKanHQIDAQAB
+AoGAErJBlVMS30QiAr452HMOG815ib+/Ua3oPjANwFv2+O44yRxFane/AGU9tLXz
+NZnMP7iqf6r6XpoyqTsv49kdXbIF0cjS+RLn/mfqlT77N1j5iJRuPmOmw4VGjZWr
+naDHpSKCz+fWlGSxyLsSpHsYAUMjXX2q2bbAlWMY+DMAa0ECQQDMb8GQqmMmye+g
+SWHvb5C1xVsBkQoxGR0u+pRkJuY5RYvyCB4VkGpz+i7d/nMcm6374NrYh/WpeKX9
+a1zL09xlAkEA9LZwNWvMGCYE1O0uWpdsvF2/1tTAcxAPTWNi4JqyIRzrwob14uy1
+Pw+d21S6BOyflzknz7EBypNzMo4AQj5oWQJAXEzUstEK5RdlFhQroGPZjQfmt8VZ
+OaOiFnTSDIm3hgINViAuHQRP278H6/iW1kK/gaoahIqV8objQpB3nBsyNQJBAOwt
+Q6CbWFAaKWGjQ7CVIpGt3V+m19J1Nn+XIy/ovXBt7DBDdv67O7YQCWdMn3fvM5uM
+wxqVGEh+BJlPKXrFpokCQC1HVLroevl0SpRcNWpvi+ap/1f+FS9E9ZpC1M1bGZAn
+v3TCqRxZuUGWPJkrNo0auVsxEVzmbjVAmTfLROprALc=
+-----END RSA PRIVATE KEY-----`,
+	}
+	err := Send(stubSendMail(t, bCount, want), &dkc, m)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func stubSendMail(t *testing.T, bCount int, want *message) SendFunc {
-	return func(from string, to []string, m io.WriterTo) error {
+	return func(from string, to []string, dkc *DKIMConfig, m io.WriterTo) error {
 		if from != want.from {
 			t.Fatalf("Invalid from, got %q, want %q", from, want.from)
 		}
@@ -717,7 +738,7 @@ func mockCopyFileWithHeader(m *Message, name string, h map[string][]string) (str
 }
 
 func BenchmarkFull(b *testing.B) {
-	discardFunc := SendFunc(func(from string, to []string, m io.WriterTo) error {
+	discardFunc := SendFunc(func(from string, to []string, dkc *DKIMConfig, m io.WriterTo) error {
 		_, err := m.WriteTo(ioutil.Discard)
 		return err
 	})
@@ -737,7 +758,28 @@ func BenchmarkFull(b *testing.B) {
 		m.Attach(mockCopyFile("benchmark.txt"))
 		m.Embed(mockCopyFile("benchmark.jpg"))
 
-		if err := Send(discardFunc, m); err != nil {
+		dkc := DKIMConfig{
+			Selector: "1592040826",
+			Domain:   "example.com",
+			PubKey:   "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDDbDWNDSezM0CLzzEvpM9dzw89DTDO+SMy4q6aZ63jTg3azolMZfhUcesDAd/4sRyPl+TnJ4Y60ULa67Z3wK61NyBOoCVzWCG9FvAO16RxAC11E6JAoj+DsusGjEGwYHq3fLPCgHhlprcOVLIgi3at5Zo9flh2K9+EuAgyWKanHQIDAQAB",
+			PrivKey: `-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQDDbDWNDSezM0CLzzEvpM9dzw89DTDO+SMy4q6aZ63jTg3azolM
+ZfhUcesDAd/4sRyPl+TnJ4Y60ULa67Z3wK61NyBOoCVzWCG9FvAO16RxAC11E6JA
+oj+DsusGjEGwYHq3fLPCgHhlprcOVLIgi3at5Zo9flh2K9+EuAgyWKanHQIDAQAB
+AoGAErJBlVMS30QiAr452HMOG815ib+/Ua3oPjANwFv2+O44yRxFane/AGU9tLXz
+NZnMP7iqf6r6XpoyqTsv49kdXbIF0cjS+RLn/mfqlT77N1j5iJRuPmOmw4VGjZWr
+naDHpSKCz+fWlGSxyLsSpHsYAUMjXX2q2bbAlWMY+DMAa0ECQQDMb8GQqmMmye+g
+SWHvb5C1xVsBkQoxGR0u+pRkJuY5RYvyCB4VkGpz+i7d/nMcm6374NrYh/WpeKX9
+a1zL09xlAkEA9LZwNWvMGCYE1O0uWpdsvF2/1tTAcxAPTWNi4JqyIRzrwob14uy1
+Pw+d21S6BOyflzknz7EBypNzMo4AQj5oWQJAXEzUstEK5RdlFhQroGPZjQfmt8VZ
+OaOiFnTSDIm3hgINViAuHQRP278H6/iW1kK/gaoahIqV8objQpB3nBsyNQJBAOwt
+Q6CbWFAaKWGjQ7CVIpGt3V+m19J1Nn+XIy/ovXBt7DBDdv67O7YQCWdMn3fvM5uM
+wxqVGEh+BJlPKXrFpokCQC1HVLroevl0SpRcNWpvi+ap/1f+FS9E9ZpC1M1bGZAn
+v3TCqRxZuUGWPJkrNo0auVsxEVzmbjVAmTfLROprALc=
+-----END RSA PRIVATE KEY-----`,
+		}
+
+		if err := Send(discardFunc, &dkc, m); err != nil {
 			panic(err)
 		}
 		m.Reset()

@@ -1,6 +1,7 @@
 package gomail
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+
+	dkim "github.com/toorop/go-dkim"
 )
 
 // A Dialer is a dialer to an SMTP server.
@@ -127,14 +130,14 @@ func addr(host string, port int) string {
 
 // DialAndSend opens a connection to the SMTP server, sends the given emails and
 // closes the connection.
-func (d *Dialer) DialAndSend(m ...*Message) error {
+func (d *Dialer) DialAndSend(dkimConfig *DKIMConfig, m ...*Message) error {
 	s, err := d.Dial()
 	if err != nil {
 		return err
 	}
 	defer s.Close()
 
-	return Send(s, m...)
+	return Send(s, dkimConfig, m...)
 }
 
 type smtpSender struct {
@@ -142,7 +145,21 @@ type smtpSender struct {
 	d *Dialer
 }
 
-func (c *smtpSender) Send(from string, to []string, msg io.WriterTo) error {
+func Split(addr string) (string, string) {
+	ps := strings.SplitN(addr, "@", 2)
+	if len(ps) != 2 {
+		return addr, ""
+	}
+
+	return ps[0], ps[1]
+}
+
+func DomainOf(addr string) string {
+	_, domain := Split(addr)
+	return domain
+}
+
+func (c *smtpSender) Send(from string, to []string, dkc *DKIMConfig, msg io.WriterTo) error {
 	if err := c.Mail(from); err != nil {
 		if err == io.EOF {
 			// This is probably due to a timeout, so reconnect and try again.
@@ -150,7 +167,7 @@ func (c *smtpSender) Send(from string, to []string, msg io.WriterTo) error {
 			if derr == nil {
 				if s, ok := sc.(*smtpSender); ok {
 					*c = *s
-					return c.Send(from, to, msg)
+					return c.Send(from, to, dkc, msg)
 				}
 			}
 		}
@@ -168,9 +185,33 @@ func (c *smtpSender) Send(from string, to []string, msg io.WriterTo) error {
 		return err
 	}
 
-	if _, err = msg.WriteTo(w); err != nil {
+	data := bytes.NewBuffer(nil)
+
+	if _, err = msg.WriteTo(data); err != nil {
+		fmt.Println(err.Error())
 		w.Close()
 		return err
+	} else {
+
+		dbytes := data.Bytes()
+		dkimOptions := dkim.NewSigOptions()
+		dkimOptions.PrivateKey = []byte(dkc.PrivKey)
+		dkimOptions.AddSignatureTimestamp = false
+		dkimOptions.Domain = DomainOf(from)
+		dkimOptions.Selector = dkc.Selector
+		dkimOptions.Headers = []string{"from", "subject", "date", "message-id"}
+		dkimOptions.Canonicalization = "relaxed/relaxed"
+		if err := dkim.Sign(&dbytes, dkimOptions); err != nil {
+			fmt.Println(err.Error())
+		}
+
+		fmt.Println(string(dbytes))
+
+		if _, err = w.Write(dbytes); err != nil {
+			w.Close()
+			return err
+		}
+
 	}
 
 	return w.Close()
