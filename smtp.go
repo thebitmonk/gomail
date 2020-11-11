@@ -205,8 +205,6 @@ func (c *smtpSender) Send(from string, to []string, dkc *DKIMConfig, msg io.Writ
 			fmt.Println(err.Error())
 		}
 
-		fmt.Println(string(dbytes))
-
 		if _, err = w.Write(dbytes); err != nil {
 			w.Close()
 			return err
